@@ -1,9 +1,8 @@
 Legato-kinetix/
 
-# custom 
+# custom
 tests/
 test_outputs/
-scripts/
 
 # Byte-compiled / cache
 __pycache__/

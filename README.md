@@ -24,15 +24,37 @@ Train (the `discover_packages_path` flag registers the plugin for the CLI):
 
 ```bash
 lerobot-train \
+  --dataset.repo_id=chomeed/board_insertion_ablation_head_with_dagger_fixed_quantile_k30_relative_action \
   --policy.type=pi05_legato \
   --policy.discover_packages_path=lerobot_policy_pi05_legato \
   --policy.pretrained_path=lerobot/pi05_base \
-  --policy.chunk_size=50 \
+  --policy.repo_id=chomeed/board_insertion_pi05_legato \
+  --policy.chunk_size=30 \
+  --policy.n_action_steps=30 \
   --policy.warmup_min=5 --policy.warmup_max=8 \
-  --policy.ramp_min=4  --policy.ramp_max=8 \
+  --policy.ramp_min=2  --policy.ramp_max=4 \
+  --policy.warmup_sampling=bell \
+  --policy.ramp_sampling=uniform \
   --policy.weight_shape=cosine \
+  --policy.num_inference_steps=10 \
   ...
 ```
+
+### Choosing `warmup` / `ramp`
+
+The schedule is derived from the deployment timing, not tuned blindly. For this
+setup — **30 Hz** control, **~210 ms** inference latency, **chunk = 30**:
+
+| quantity | derivation | value |
+|---|---|---|
+| step period | `1 / 30 Hz` | 33.3 ms |
+| **warmup** | steps executed from the old chunk during inference: `210 ms × 30 Hz ≈ 6.3` | sample **[5, 8]** (brackets 6.3 + jitter; `bell` biases to the typical low end) |
+| **ramp** | keep anchored+ramp within **0.4 · chunk = 12** so ≥ 60 % (18 steps) stays fresh: `ramp_max ≤ 12 − warmup_max = 4` | sample **[2, 4]** |
+
+So `warmup` tracks the **physical inference delay** (how many committed actions the
+new chunk must agree with), while `ramp` is the **smoothing budget**, capped so the
+majority of every chunk is freshly generated. `warmup_max + ramp_max = 12 < chunk_size`
+also satisfies the hard config guard (below).
 
 > `chunk_size` **must** exceed `warmup_max + ramp_max`, or the weight curve never reaches `1` (no freshly generated positions). Enforced in `PI05LegatoConfig.__post_init__`.
 

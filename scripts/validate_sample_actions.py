@@ -222,6 +222,17 @@ def evaluate(
     region_se: dict[str, float] = {k: 0.0 for k in region_pos}
     region_cnt: dict[str, int] = {k: 0 for k in region_pos}
 
+    # Diagnostics: per-dimension, per-chunk-position, and predict-zero baseline.
+    Da = original_action_dim
+    chunk_T = config.chunk_size
+    dim_se_norm = torch.zeros(Da)
+    dim_se_raw = torch.zeros(Da)
+    dim_cnt = torch.zeros(Da)
+    pos_se_norm = torch.zeros(chunk_T)
+    pos_cnt = torch.zeros(chunk_T)
+    zero_se_norm = 0.0  # MSE of the trivial "predict 0 (== the normalization center)" predictor
+    zero_se_raw = 0.0
+
     n_batches = len(loader)
     for bi, batch in enumerate(loader):
         # Keep a raw copy of the ground-truth action chunk (pre-normalization) and
@@ -284,6 +295,19 @@ def evaluate(
             region_se[region] += float(reg_se.sum().cpu())
             region_cnt[region] += int(reg_n.sum().cpu())
 
+        # Diagnostics: per-dim, per-position, predict-zero baseline.
+        se_norm_cpu = se_norm.detach().cpu()
+        valid_cpu = valid.detach().cpu()  # (B, T, 1)
+        nvalid_cpu = valid_cpu.expand(-1, -1, Da)  # (B, T, Da)
+        dim_se_norm += se_norm_cpu.sum(dim=(0, 1))
+        dim_se_raw += se_raw.sum(dim=(0, 1))
+        dim_cnt += nvalid_cpu.sum(dim=(0, 1))
+        pos_se_norm += se_norm_cpu.sum(dim=(0, 2))
+        pos_cnt += nvalid_cpu.sum(dim=(0, 2))
+        tgt_cpu = target_norm.detach().cpu()
+        zero_se_norm += float(((tgt_cpu**2) * valid_cpu).sum())
+        zero_se_raw += float(((raw_action**2) * valid_cpu).sum())
+
         if (bi + 1) % 10 == 0 or bi + 1 == n_batches:
             running = norm_se[-1] / max(count[-1], 1)
             logging.info(f"  batch {bi + 1}/{n_batches}  running normalized MSE={running:.6f}")
@@ -312,6 +336,18 @@ def evaluate(
             }
             for region in region_pos
         }
+    n_all = max(count[-1], 1)
+    result["baseline_predict_zero"] = {
+        "mse_norm": zero_se_norm / n_all,
+        "mse_raw": zero_se_raw / n_all,
+    }
+    result["per_dim"] = {
+        "mse_norm": (dim_se_norm / dim_cnt.clamp(min=1)).tolist(),
+        "mse_raw": (dim_se_raw / dim_cnt.clamp(min=1)).tolist(),
+    }
+    result["per_position"] = {
+        "mse_norm": (pos_se_norm / pos_cnt.clamp(min=1)).tolist(),
+    }
     return result
 
 
@@ -320,10 +356,38 @@ def _print_report(name: str, result: dict) -> None:
     print(f"\n=== {name} ===")
     print(f"  overall  MSE(normalized)={ov['mse_norm']:.6f}   MSE(raw)={ov['mse_raw']:.6f}   "
           f"(n={ov['n_action_elems']} action elems)")
+
+    # Predict-zero baseline == variance of the (quantile-normalized) actions. The
+    # fraction of it the model removes is the interpretable "did it learn" signal.
+    bz = result.get("baseline_predict_zero")
+    if bz:
+        frac = 1.0 - ov["mse_norm"] / bz["mse_norm"] if bz["mse_norm"] > 0 else float("nan")
+        print(f"  predict-zero baseline: MSE(norm)={bz['mse_norm']:.6f}   MSE(raw)={bz['mse_raw']:.6f}   "
+              f"[model removes {frac * 100:.0f}% of normalized action variance]")
+
     if "per_region" in result:
         print("  per-region (normalized space):")
         for region, m in result["per_region"].items():
             print(f"    {region:<16} MSE(norm)={m['mse_norm']:.6f}   (n={m['n_action_elems']})")
+
+    if "per_position" in result:
+        pp = result["per_position"]["mse_norm"]
+        n = len(pp)
+        third = max(n // 3, 1)
+        near = sum(pp[:third]) / len(pp[:third])
+        mid = sum(pp[third:2 * third]) / max(len(pp[third:2 * third]), 1)
+        far = sum(pp[2 * third:]) / max(len(pp[2 * third:]), 1)
+        print(f"  per-position MSE(norm): near[0:{third}]={near:.4f}  mid={mid:.4f}  "
+              f"far[{2 * third}:{n}]={far:.4f}   (pos0={pp[0]:.4f}, pos{n - 1}={pp[-1]:.4f})")
+
+    if "per_dim" in result:
+        dn = result["per_dim"]["mse_norm"]
+        dr = result["per_dim"]["mse_raw"]
+        order = sorted(range(len(dn)), key=lambda i: dn[i], reverse=True)
+        print("  per-dimension MSE (normalized | raw), worst-normalized first:")
+        for i in order:
+            print(f"    dim {i:>2}:  norm={dn[i]:.6f}   raw={dr[i]:.6f}")
+
     print("  per-episode:")
     for ep, m in result["per_episode"].items():
         print(f"    ep {ep:>4}:  MSE(norm)={m['mse_norm']:.6f}   MSE(raw)={m['mse_raw']:.6f}")

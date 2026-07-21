@@ -20,15 +20,18 @@ The policy is registered as **`pi05_legato`**:
 from lerobot_policy_pi05_legato.modeling_pi05_legato import PI05LegatoPolicy
 ```
 
-Train (the `discover_packages_path` flag registers the plugin for the CLI):
+Train (multi-GPU via `accelerate`; `discover_packages_path` registers the plugin for the CLI):
 
 ```bash
-lerobot-train \
+accelerate launch --num_processes=3 --multi_gpu $(which lerobot-train) \
   --dataset.repo_id=chomeed/board_insertion_ablation_head_with_dagger_fixed_quantile_k30_relative_action \
   --policy.type=pi05_legato \
   --policy.discover_packages_path=lerobot_policy_pi05_legato \
   --policy.pretrained_path=lerobot/pi05_base \
   --policy.repo_id=chomeed/board_insertion_pi05_legato \
+  --policy.gradient_checkpointing=true \
+  --policy.use_relative_actions=true \
+  --policy.dtype=bfloat16 \
   --policy.chunk_size=30 \
   --policy.n_action_steps=30 \
   --policy.warmup_min=5 --policy.warmup_max=8 \
@@ -37,8 +40,23 @@ lerobot-train \
   --policy.ramp_sampling=uniform \
   --policy.weight_shape=cosine \
   --policy.num_inference_steps=10 \
-  ...
+  --job_name=board_insertion_pi05_legato \
+  --output_dir=/NHNHOME/WORKSPACE/26moe002_B/chomeed/workspace/outputs/ablation/board_insertion_pi05_legato \
+  --steps=50_000 \
+  --batch_size=16 \
+  --num_workers=16 \
+  --save_freq=5_000 \
+  --log_freq=200 \
+  --policy.scheduler_warmup_steps=1000 \
+  --policy.scheduler_decay_steps=50_000 \
+  --policy.scheduler_decay_lr=2.5e-6 \
+  --optimizer.lr=2.5e-5 \
+  --wandb.enable=true \
+  --wandb.disable_artifact=true \
+  --wandb.project=grant-hyundai
 ```
+
+> With `--num_processes=3`, `--batch_size=16` is **per-process** → global batch 48.
 
 ### Choosing `warmup` / `ramp`
 

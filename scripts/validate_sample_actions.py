@@ -54,19 +54,21 @@ continuation (LEGATO guided flow)
 No GPU is required by design of the code, but flow inference is heavy -- run this
 on a GPU box (``--device cuda``).
 
+Defaults compare finetuned vs. pi05_base on 1 demo with batch size 4.
+
 Examples
 --------
-    # validate the core sampler (fresh path) + baseline reference
+    # default: fresh-path core-sampler check, finetuned vs pi05_base, 1 demo, bs=4
     python scripts/validate_sample_actions.py \
         --policy-path /path/to/.../checkpoints/050000/pretrained_model \
         --dataset-repo-id chomeed/board_insertion_..._k30_relative_action \
-        --n-episodes 10 --device cuda --compare-base
+        --device cuda
 
     # validate the LEGATO continuation (guided flow), warmup=6 ramp=4
     python scripts/validate_sample_actions.py \
         --policy-path /path/to/.../checkpoints/050000/pretrained_model \
         --dataset-repo-id chomeed/board_insertion_..._k30_relative_action \
-        --n-episodes 10 --device cuda --mode continuation --warmup 6 --ramp 4
+        --device cuda --mode continuation --warmup 6 --ramp 4
 """
 
 from __future__ import annotations
@@ -334,9 +336,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--policy-path", required=True, help="Path to the trained LEGATO checkpoint (pretrained_model dir).")
     parser.add_argument("--dataset-repo-id", required=True, help="LeRobot dataset repo id to validate on.")
-    parser.add_argument("--n-episodes", type=int, default=10, help="Number of episodes to evaluate (default 10).")
+    parser.add_argument("--n-episodes", type=int, default=1, help="Number of episodes (demos) to evaluate (default 1).")
     parser.add_argument("--device", default="cuda", help="torch device (default cuda).")
-    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--num-inference-steps", type=int, default=None, help="Override the flow denoising steps (default: config value).")
     parser.add_argument("--mode", choices=["fresh", "continuation"], default="fresh",
@@ -345,7 +347,8 @@ def main() -> None:
                         help="continuation warmup (# anchored positions). Default: config.warmup_min. Ignored in fresh mode.")
     parser.add_argument("--ramp", type=int, default=None,
                         help="continuation ramp (hand-over length). Default: config.ramp_min. Ignored in fresh mode.")
-    parser.add_argument("--compare-base", action="store_true", help="Also evaluate the un-finetuned lerobot/pi05_base baseline.")
+    parser.add_argument("--compare-base", action=argparse.BooleanOptionalAction, default=True,
+                        help="Also evaluate the un-finetuned lerobot/pi05_base baseline (default on; --no-compare-base to skip).")
     args = parser.parse_args()
 
     init_logging()

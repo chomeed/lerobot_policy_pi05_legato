@@ -1,0 +1,14 @@
+[project]
+name = "lerobot_policy_pi05_legato"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "lerobot",
+  "torch",
+  "transformers",
+  "pillow",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

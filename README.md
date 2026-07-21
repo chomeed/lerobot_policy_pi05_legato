@@ -46,15 +46,15 @@ accelerate launch --num_processes=3 --multi_gpu $(which lerobot-train) \
   --wandb.enable=true \
   --wandb.disable_artifact=true \
   --wandb.project=grant-hyundai \
-  --steps=50_000 \
+  --steps=100_000 \
   --batch_size=16 \
   --num_workers=16 \
   --save_freq=10_000 \
   --log_freq=200 \
-  --policy.scheduler_warmup_steps=1_000 \
-  --policy.scheduler_decay_steps=50_000 \
-  --policy.scheduler_decay_lr=1.0e-6 \
-  --optimizer.lr=1.0e-5
+  --policy.scheduler_warmup_steps=2_000 \
+  --policy.scheduler_decay_steps=100_000 \
+  --policy.scheduler_decay_lr=2.5e-6 \
+  --optimizer.lr=2.5e-5
 ```
 
 > The package must be installed (`pip install -e .`) so `pi05_legato` registers.

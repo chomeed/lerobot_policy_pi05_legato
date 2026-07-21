@@ -38,6 +38,7 @@ accelerate launch --num_processes=3 --multi_gpu $(which lerobot-train) \
   --policy.warmup_sampling=bell \
   --policy.ramp_sampling=uniform \
   --policy.weight_shape=cosine \
+  --policy.fresh_prob=0.1 \
   --policy.num_inference_steps=10 \
   --dataset.repo_id=chomeed/board_insertion_ablation_head_with_dagger_fixed_quantile_k30_relative_action \
   --output_dir=/path/to/outputs/board_insertion_ablation_legato_pi05 \
@@ -94,6 +95,12 @@ w[i] = 0                            for i < warmup           (previous chunk)
 ```
 
 `warmup` and `ramp` are each sampled per example (`bell` / `exp` / `uniform`). The hand-over `shape` is `step`, `linear`, or **`cosine`** (default, `0.5·(1−cos(πf))` — the smooth ramp the paper recommends for real-robot deployment; the reference Kinetix sim uses the hard `step`).
+
+### Anchor dropout (`fresh_prob`)
+
+Because `warmup ∈ [warmup_min, warmup_max]` with `warmup_min ≥ 1`, the **leading** chunk positions are *always* anchored during training and thus **never supervised at `w=1`**. So the model never learns to generate the **first** chunk unconditionally — the cold-start case at deployment (no previous chunk → `w=1` everywhere), where fresh-mode action MSE is then poor, concentrated at the early positions.
+
+`fresh_prob` fixes this: with this probability a training example is forced fully fresh (`w≡1`), the flow-matching analog of classifier-free-guidance dropout. `0.0` disables it (original behavior); **`~0.1–0.2`** teaches unconditional generation while keeping most examples on the guided (continuation) objective. Inference is unaffected.
 
 ![LEGATO weight curves](media/weight_curves.png)
 

@@ -40,6 +40,18 @@ class PI05LegatoConfig(PI05Config):
     # with the number of Euler steps actually run at inference — no separate
     # flow-step field.
 
+    # --- anchor dropout (cold-start / unconditional generation) ----------------
+    # Probability that a *training* example is forced fully fresh (w == 1
+    # everywhere) instead of using its sampled warmup/ramp curve. Because warmup
+    # is sampled from [warmup_min, warmup_max] (>= 1 by default), the leading chunk
+    # positions are otherwise NEVER supervised at w == 1, so the model never learns
+    # to generate the *first* chunk unconditionally (the cold-start case, where
+    # there is no previous chunk to anchor to). Dropping the anchor with this
+    # probability -- the flow-matching analog of classifier-free-guidance dropout
+    # -- teaches unconditional generation. 0.0 disables it (previous behavior);
+    # ~0.1-0.2 is a reasonable range. Only affects training, not inference.
+    fresh_prob: float = 0.0
+
     # TODO(legato): any additional LEGATO hyperparameters go here.
 
     def __post_init__(self):
@@ -55,6 +67,8 @@ class PI05LegatoConfig(PI05Config):
             raise ValueError(f"Require 0 <= warmup_min <= warmup_max, got {self.warmup_min}, {self.warmup_max}")
         if not (1 <= self.ramp_min <= self.ramp_max):
             raise ValueError(f"Require 1 <= ramp_min <= ramp_max, got {self.ramp_min}, {self.ramp_max}")
+        if not (0.0 <= self.fresh_prob <= 1.0):
+            raise ValueError(f"Require 0 <= fresh_prob <= 1, got {self.fresh_prob}")
         # The weight curve must reach w=1 (fresh) inside the chunk, else there
         # are no freshly generated positions to supervise.
         if self.warmup_max + self.ramp_max >= self.chunk_size:

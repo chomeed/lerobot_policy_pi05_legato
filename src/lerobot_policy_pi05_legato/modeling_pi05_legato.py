@@ -246,6 +246,15 @@ class PI05PytorchLEGATO(PI05Pytorch):
         bsize = actions.shape[0]
         w, _, _ = sample_weight_curve(self.config, bsize, device=actions.device)  # (B, chunk)
         w = w.unsqueeze(-1)  # (B, chunk, 1)
+        # Note (LEGATO): anchor dropout. With prob `fresh_prob`, force the whole
+        # example fully fresh (w == 1) so the model also learns unconditional
+        # generation for the cold-start first chunk. Otherwise warmup >= warmup_min
+        # means the leading positions are never supervised at w == 1. w==1 makes
+        # kappa=0 (u_t unchanged) and x_t stays the plain noisy sample, i.e. a
+        # vanilla pi05 flow example (still tagged w=1 in the weight channel).
+        if self.config.fresh_prob > 0.0:
+            fresh = torch.rand(bsize, device=actions.device) < self.config.fresh_prob  # (B,)
+            w = torch.where(fresh[:, None, None], torch.ones_like(w), w)
         # Note (LEGATO): dt from num_inference_steps keeps kappa consistent with
         # the number of Euler steps actually run at inference.
         dt = 1.0 / self.config.num_inference_steps
